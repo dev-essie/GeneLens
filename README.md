@@ -73,12 +73,12 @@ dropped.
 - `CYP1B1` upregulated → oxidative stress response
 - `TGFBR2`, `SETDB1` upregulated → immune evasion and epigenetic reprogramming
 
-**ML classification (Random Forest, GeneLens defaults):** top 30 differentially expressed genes as features; 200 trees, max depth 5, balanced class weights; 5-fold stratified cross-validation (ROC AUC). Reproduced locally on the published GSE152418 raw count matrix (`GSE152418_p20047_Study1_RawCounts.txt.gz`) after Ensembl→symbol mapping, with adj. p-value < 0.05 and |FC| > 1.5 matching the DE panel above.
+**ML classification (Random Forest, GeneLens defaults):** Welch DE gene selection (adj. p < 0.05, |FC| > 1.5, top 30 genes) **inside each CV training fold**, then scaling + Random Forest (200 trees, max depth 5, balanced class weights); 5-fold stratified CV ROC AUC. Reproduced on the published GSE152418 raw count matrix (`GSE152418_p20047_Study1_RawCounts.txt.gz`) after Ensembl→symbol mapping — see [`scripts/reproduce_gse152418_ml.py`](scripts/reproduce_gse152418_ml.py) and [PR #2](https://github.com/dev-essie/GeneLens/pull/2).
 
-- **5-fold CV AUC:** 1.000 ± 0.000
-- **Top feature-importance genes:** `TGFBR2`, `RNF38`, `ESPL1`, `RNF111`, `ZCCHC3`, `ASPM`, `TK1`, `CSRNP2`
+- **5-fold CV AUC:** 0.983 ± 0.033
+- **Top feature-importance genes (full-data exploratory model):** `TGFBR2`, `RNF38`, `ESPL1`, `RNF111`, `ZCCHC3`, `ASPM`, `TK1`, `CSRNP2`
 
-> **Note on the ML AUC:** In the current app flow, Welch DE (and the top-30 gene list passed to the classifier) is computed on **all samples** before `cross_val_score` runs; only scaling and Random Forest refitting happen inside each fold (`utils/ml_classifier.py`). That label-informed feature selection can inflate CV AUC, especially with n=34 and clear COVID-vs-control separation — treat this metric as exploratory. **Nested cross-validation with in-fold feature selection** and held-out validation are planned next steps.
+> **Note on the ML AUC:** Cross-validated AUC uses **in-fold** Welch DE feature selection (no global gene list before CV). The ROC curve and importances in the app are still from a model refit on all 34 samples and are illustrative only; with small *n*, even honest CV AUC can stay high when biology separates groups strongly.
 
 ---
 
@@ -188,7 +188,7 @@ GeneLens is an active research-oriented project, not a finished product. Planned
 - Validating GeneLens outputs on more independent datasets and comparing results to published differential-expression tables where available
 - Exploring statistically richer DE models (e.g. negative-binomial / DESeq2- or limma-voom-style workflows) alongside the current Welch t-test implementation
 - Comparing classifiers beyond Random Forest (e.g. regularized logistic regression, gradient boosting) and reporting calibration as well as AUC
-- **Nested cross-validation with in-fold feature selection** so DE gene picking and model training are not evaluated on the same samples
+- Independent held-out validation cohorts (beyond cross-validation on the same matrix) and clearer GEO sample-metadata parsing so groups are not inferred from column order alone
 - Extending toward single-cell or pseudobulk workflows where sample metadata and matrix formats allow
 - Connecting findings to metabolic and infectious disease relevance in Nigeria and broader African health contexts, in collaboration with domain experts
 
