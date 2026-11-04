@@ -287,8 +287,16 @@ def cached_de_analysis(df, control_t, treated_t, pval_threshold, fc_threshold, a
     )
 
 @st.cache_data(show_spinner=False)
-def cached_ml(df, results, control_t, treated_t):
-    return run_ml_classification(df, results, list(control_t), list(treated_t))
+def cached_ml(df, results, control_t, treated_t, pval_threshold, fc_threshold, already_log2):
+    return run_ml_classification(
+        df,
+        results,
+        list(control_t),
+        list(treated_t),
+        pval_threshold=pval_threshold,
+        fc_threshold=fc_threshold,
+        already_log2=already_log2,
+    )
 
 @st.cache_data(show_spinner=False)
 def cached_pathway_enrichment(results):
@@ -486,7 +494,15 @@ st.markdown('<div class="section-header">MACHINE LEARNING CLASSIFICATION</div>',
 
 try:
     with st.spinner("Training Random Forest classifier..."):
-        ml_results = cached_ml(df, results, tuple(control_cols), tuple(treated_cols))
+        ml_results = cached_ml(
+            df,
+            results,
+            tuple(control_cols),
+            tuple(treated_cols),
+            pval_threshold,
+            fc_threshold,
+            already_log2,
+        )
     ml1, ml2 = st.columns(2)
     with ml1:
         st.plotly_chart(ml_results["roc_fig"], width='stretch')
