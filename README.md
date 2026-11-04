@@ -60,12 +60,11 @@ dropped.
 > automatically (see [Gene ID Mapping](#gene-id-mapping-new-in-v10) above); after
 > dropping unmapped and duplicate IDs, 44,242 genes remain for analysis.
 
-<!-- Add your COVID volcano screenshot URL here -->
-<img width="959" height="474" alt="Image" src="https://github.com/user-attachments/assets/c3f17865-3161-43f2-b139-e6a2688458e9" />
+<img width="959" height="474" alt="Volcano plot — GSE152418 differential expression" src="https://github.com/user-attachments/assets/c3f17865-3161-43f2-b139-e6a2688458e9" />
 
 *3,200 upregulated · 2,216 downregulated*
 
-<img width="959" height="476" alt="Image" src="https://github.com/user-attachments/assets/fd47d0de-f499-4f62-9faf-d3c58d4ca24a" />
+<img width="959" height="476" alt="PCA — GSE152418 sample clustering" src="https://github.com/user-attachments/assets/fd47d0de-f499-4f62-9faf-d3c58d4ca24a" />
 
 *Clean separation of COVID-19 patients from healthy controls on PC1*
 
@@ -73,6 +72,13 @@ dropped.
 - `CDC20`, `FOXM1`, `RRM2` downregulated → immune cell cycle arrest
 - `CYP1B1` upregulated → oxidative stress response
 - `TGFBR2`, `SETDB1` upregulated → immune evasion and epigenetic reprogramming
+
+**ML classification (Random Forest, GeneLens defaults):** Welch DE gene selection (adj. p < 0.05, |FC| > 1.5, top 30 genes) **inside each CV training fold**, then scaling + Random Forest (200 trees, max depth 5, balanced class weights); 5-fold stratified CV ROC AUC. Reproduced on the published GSE152418 raw count matrix (`GSE152418_p20047_Study1_RawCounts.txt.gz`) after Ensembl→symbol mapping — see [`scripts/reproduce_gse152418_ml.py`](scripts/reproduce_gse152418_ml.py) and [PR #2](https://github.com/dev-essie/GeneLens/pull/2).
+
+- **5-fold CV AUC:** 0.983 ± 0.033
+- **Top feature-importance genes (full-data exploratory model):** `TGFBR2`, `RNF38`, `ESPL1`, `RNF111`, `ZCCHC3`, `ASPM`, `TK1`, `CSRNP2`
+
+> **Note on the ML AUC:** Cross-validated AUC uses **in-fold** Welch DE feature selection (no global gene list before CV). The ROC curve and importances in the app are still from a model refit on all 34 samples and are illustrative only; with small *n*, even honest CV AUC can stay high when biology separates groups strongly.
 
 ---
 
@@ -84,16 +90,15 @@ dropped.
 
 **Note:** This dataset was constructed as a biologically informed demonstration using gene expression directions and magnitudes derived from published T2DM transcriptomics literature (including Pihlajamäki et al. 2009, GSE15653). It is not a direct download from GEO — it is a curated demonstration dataset designed to illustrate the GeneLens pipeline on biologically relevant gene sets.
 
-<!-- Add your T2DM screenshots here -->
-<img width="1918" height="877" alt="Image" src="https://github.com/user-attachments/assets/d2528e19-c859-4b4f-a5ef-e8ab85319d89" />
+<img width="1918" height="877" alt="Heatmap — T2DM demonstration dataset" src="https://github.com/user-attachments/assets/d2528e19-c859-4b4f-a5ef-e8ab85319d89" />
 
 *GPX1, GCLM, GSR downregulated — antioxidant enzymes from thesis research*
 
-<img width="1919" height="943" alt="Image" src="https://github.com/user-attachments/assets/1f415041-4918-4d2a-932d-954a9172ff04" />
+<img width="1919" height="943" alt="GO enrichment — T2DM demonstration" src="https://github.com/user-attachments/assets/1f415041-4918-4d2a-932d-954a9172ff04" />
 
 *Glutathione metabolic process — enriched among downregulated genes*
 
-<img width="1919" height="948" alt="Image" src="https://github.com/user-attachments/assets/e79afb9c-c05f-4051-a77d-dbd09504edc8" />
+<img width="1919" height="948" alt="KEGG pathways — T2DM demonstration" src="https://github.com/user-attachments/assets/e79afb9c-c05f-4051-a77d-dbd09504edc8" />
 
 
 **Key findings from demonstration:**
@@ -103,7 +108,7 @@ dropped.
 - **Top GO term:** Glucose homeostasis (GO:0042593)
 - **Top KEGG pathway:** Insulin signalling (p=1.86e-08)
 
-> 📁 Full case study and methods: [genelens-t2dm-study](https://github.com/ESTIE-CREATOR/genelens-t2dm-study)
+> 📁 Full case study and methods: [genelens-t2dm-study](https://github.com/dev-essie/genelens-t2dm-study)
 
 ---
 
@@ -122,7 +127,7 @@ dropped.
 ## How to Run Locally
 
 ```bash
-git clone https://github.com/ESTIE-CREATOR/GeneLens.git
+git clone https://github.com/dev-essie/GeneLens.git
 cd GeneLens
 python -m venv venv
 source venv/bin/activate     # Mac/Linux
@@ -175,17 +180,39 @@ GeneLens/
 
 ---
 
+## Research Interests & Next Steps
+
+GeneLens is an active research-oriented project, not a finished product. Planned and exploratory directions include:
+
+- Applying ML on bulk RNA-seq and other transcriptomic data across additional disease contexts, with emphasis on reproducible benchmarks on public GEO series
+- Validating GeneLens outputs on more independent datasets and comparing results to published differential-expression tables where available
+- Exploring statistically richer DE models (e.g. negative-binomial / DESeq2- or limma-voom-style workflows) alongside the current Welch t-test implementation
+- Comparing classifiers beyond Random Forest (e.g. regularized logistic regression, gradient boosting) and reporting calibration as well as AUC
+- Independent held-out validation cohorts (beyond cross-validation on the same matrix) and clearer GEO sample-metadata parsing so groups are not inferred from column order alone
+- Extending toward single-cell or pseudobulk workflows where sample metadata and matrix formats allow
+- Connecting findings to metabolic and infectious disease relevance in Nigeria and broader African health contexts, in collaboration with domain experts
+
+---
+
 ## Related Research
 
-📁 **T2DM Workflow Case Study:** [github.com/ESTIE-CREATOR/genelens-t2dm-study](https://github.com/ESTIE-CREATOR/genelens-t2dm-study)
+📁 **T2DM Workflow Case Study:** [github.com/dev-essie/genelens-t2dm-study](https://github.com/dev-essie/genelens-t2dm-study)
+
+---
+
+## How to Cite
+
+If you use GeneLens in a presentation, thesis, or publication, please cite the software record in [`CITATION.cff`](CITATION.cff). Example:
+
+> Alabi, E. O. (2026). *GeneLens: A web application for RNA-seq differential expression analysis, pathway enrichment, and ML classification* (Version 1.0.0) [Computer software]. https://github.com/dev-essie/GeneLens
 
 ---
 
 ## Built By
 
-**Alabi Esther Oluwatimilehin**
-BSc Biochemistry — First Class Honours, University of Medical Sciences, Nigeria
-[github.com/ESTIE-CREATOR](https://github.com/ESTIE-CREATOR) · [linkedin.com/in/alabi-esther-essie](https://linkedin.com/in/alabi-esther-essie)
+**Alabi Esther Oluwatimilehin**  
+BSc Biochemistry — First Class Honours, University of Medical Sciences, Nigeria  
+[github.com/dev-essie](https://github.com/dev-essie) · [devessie.xyz](https://devessie.xyz/) · [linkedin.com/in/alabi-esther-essie](https://linkedin.com/in/alabi-esther-essie)
 
 ---
 *MIT License*

@@ -7,4 +7,4 @@ authors:
 title: "GeneLens: A web application for RNA-seq differential expression analysis, pathway enrichment, and ML classification"
 version: 1.0.0
 date-released: 2026-01-01
-url: "https://github.com/ESTIE-CREATOR/GeneLens"
+url: "https://github.com/dev-essie/GeneLens"
