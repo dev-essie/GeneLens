@@ -78,6 +78,8 @@ dropped.
 - **5-fold CV AUC:** 1.000 ± 0.000
 - **Top feature-importance genes:** `TGFBR2`, `RNF38`, `ESPL1`, `RNF111`, `ZCCHC3`, `ASPM`, `TK1`, `CSRNP2`
 
+> **Note on the ML AUC:** In the current app flow, Welch DE (and the top-30 gene list passed to the classifier) is computed on **all samples** before `cross_val_score` runs; only scaling and Random Forest refitting happen inside each fold (`utils/ml_classifier.py`). That label-informed feature selection can inflate CV AUC, especially with n=34 and clear COVID-vs-control separation — treat this metric as exploratory. **Nested cross-validation with in-fold feature selection** and held-out validation are planned next steps.
+
 ---
 
 ### Dataset 2 — Type 2 Diabetes Liver — Workflow Demonstration
@@ -186,6 +188,7 @@ GeneLens is an active research-oriented project, not a finished product. Planned
 - Validating GeneLens outputs on more independent datasets and comparing results to published differential-expression tables where available
 - Exploring statistically richer DE models (e.g. negative-binomial / DESeq2- or limma-voom-style workflows) alongside the current Welch t-test implementation
 - Comparing classifiers beyond Random Forest (e.g. regularized logistic regression, gradient boosting) and reporting calibration as well as AUC
+- **Nested cross-validation with in-fold feature selection** so DE gene picking and model training are not evaluated on the same samples
 - Extending toward single-cell or pseudobulk workflows where sample metadata and matrix formats allow
 - Connecting findings to metabolic and infectious disease relevance in Nigeria and broader African health contexts, in collaboration with domain experts
 

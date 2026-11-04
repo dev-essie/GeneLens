@@ -265,7 +265,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown(
-        "<small style='color:#4B5563'>Built by Alabi Esther · GitHub: ESTIE-CREATOR</small>",
+        "<small style='color:#4B5563'>Built by Alabi Esther · GitHub: dev-essie</small>",
         unsafe_allow_html=True
     )
 
@@ -703,6 +703,6 @@ with col_exp2:
 
 st.markdown("---")
 st.markdown(
-    "<center><small style='color:#374151; font-family:Space Mono,monospace'>GeneLens · Built by Alabi Esther Oluwatimilehin · github.com/ESTIE-CREATOR</small></center>",
+    "<center><small style='color:#374151; font-family:Space Mono,monospace'>GeneLens · Built by Alabi Esther Oluwatimilehin · github.com/dev-essie</small></center>",
     unsafe_allow_html=True
 )
