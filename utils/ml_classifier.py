@@ -1,11 +1,15 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from scipy import stats
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_curve, auc
 from sklearn.pipeline import Pipeline
+
+from utils.de_analysis import _bh_correction
 
 
 COLORS = {
@@ -18,6 +22,110 @@ COLORS = {
 }
 
 
+class FoldInternalDESelector(BaseEstimator, TransformerMixin):
+    """
+    Select top-k genes using Welch t-test + BH FDR on the training fold only
+    (same rules as utils.de_analysis significance labels).
+    """
+
+    def __init__(
+        self,
+        k: int = 30,
+        pval_threshold: float = 0.05,
+        fc_threshold: float = 1.5,
+    ):
+        self.k = k
+        self.pval_threshold = pval_threshold
+        self.fc_threshold = fc_threshold
+
+    def fit(self, X, y):
+        X = np.asarray(X, dtype=float)
+        y = np.asarray(y)
+        control = X[y == 0]
+        treated = X[y == 1]
+        if control.shape[0] < 2 or treated.shape[0] < 2:
+            n_features = X.shape[1]
+            k = min(self.k, n_features)
+            self.selected_indices_ = np.arange(k)
+            return self
+
+        _, p_values = stats.ttest_ind(treated, control, axis=0, equal_var=False)
+        p_values = np.nan_to_num(p_values, nan=1.0)
+        adj_p = _bh_correction(p_values)
+        log2_fc = treated.mean(axis=0) - control.mean(axis=0)
+        log2_fc_thresh = np.log2(self.fc_threshold)
+
+        sig_mask = (adj_p < self.pval_threshold) & (np.abs(log2_fc) > log2_fc_thresh)
+        order = np.argsort(adj_p)
+
+        selected = []
+        for idx in order:
+            if sig_mask[idx]:
+                selected.append(idx)
+            if len(selected) >= self.k:
+                break
+        if len(selected) < self.k:
+            for idx in order:
+                if idx not in selected:
+                    selected.append(idx)
+                if len(selected) >= self.k:
+                    break
+
+        self.selected_indices_ = np.array(selected[: self.k], dtype=int)
+        return self
+
+    def transform(self, X):
+        X = np.asarray(X, dtype=float)
+        return X[:, self.selected_indices_]
+
+
+def _build_expression_matrix(
+    df: pd.DataFrame,
+    control_cols: list,
+    treated_cols: list,
+    already_log2: bool,
+) -> tuple[np.ndarray, np.ndarray, list]:
+    """Samples × genes matrix (log2), labels, gene names."""
+    all_cols = control_cols + treated_cols
+    values = df.loc[:, all_cols].values.astype(float)
+    if already_log2:
+        log2_values = values
+    else:
+        log2_values = np.log2(values + 1.0)
+    X = log2_values.T
+    y = np.array([0] * len(control_cols) + [1] * len(treated_cols))
+    gene_names = list(df.index)
+    return X, y, gene_names
+
+
+def _make_ml_pipeline(
+    top_n_features: int,
+    pval_threshold: float,
+    fc_threshold: float,
+    random_state: int,
+) -> Pipeline:
+    return Pipeline([
+        (
+            "selector",
+            FoldInternalDESelector(
+                k=top_n_features,
+                pval_threshold=pval_threshold,
+                fc_threshold=fc_threshold,
+            ),
+        ),
+        ("scaler", StandardScaler()),
+        (
+            "rf",
+            RandomForestClassifier(
+                n_estimators=200,
+                max_depth=5,
+                random_state=random_state,
+                class_weight="balanced",
+            ),
+        ),
+    ])
+
+
 def run_ml_classification(
     df: pd.DataFrame,
     results: pd.DataFrame,
@@ -25,47 +133,38 @@ def run_ml_classification(
     treated_cols: list,
     top_n_features: int = 30,
     n_splits: int = 5,
-    random_state: int = 42
+    random_state: int = 42,
+    pval_threshold: float = 0.05,
+    fc_threshold: float = 1.5,
+    already_log2: bool = False,
 ) -> dict:
     """
     Train a Random Forest classifier to distinguish Control vs Treated.
-    Uses top DE genes as features.
+
+    Cross-validated AUC uses in-fold Welch DE feature selection (no label leakage
+    into gene picking). ROC curve and feature importances come from a final model
+    refit on all samples (exploratory visualization only).
+
+    The ``results`` DataFrame is kept for API compatibility with the Streamlit app
+    but is not used to choose ML features.
 
     Returns:
         dict with: accuracy, std, feature_importances, roc_fig, cv_scores
     """
-    # Dedupe gene index first — a duplicated symbol makes df.loc[gene] return
-    # multiple rows for one requested label, which silently inflates the
-    # feature matrix beyond len(sig_genes) and breaks it downstream.
+    del results  # global DE table must not drive CV features
+
     if df.index.duplicated().any():
         df = df.groupby(df.index).mean()
 
-    # Select top DE genes as features, filtering to genes present in df
-    sig_genes = results[results["significance"] != "Not significant"]["Gene"].head(top_n_features).tolist()
-    if len(sig_genes) < 5:
-        sig_genes = results["Gene"].head(top_n_features).tolist()
-    sig_genes = [g for g in sig_genes if g in df.index]
+    X, y, gene_names = _build_expression_matrix(
+        df, control_cols, treated_cols, already_log2
+    )
+    gene_names_arr = np.array(gene_names)
 
-    all_cols = control_cols + treated_cols
-    labels = [0] * len(control_cols) + [1] * len(treated_cols)
+    pipeline = _make_ml_pipeline(
+        top_n_features, pval_threshold, fc_threshold, random_state
+    )
 
-    # Feature matrix: log2-transformed expression
-    feature_df = np.log2(df.loc[sig_genes, all_cols].values.T.astype(float) + 1)
-    X = feature_df
-    y = np.array(labels)
-
-    # Pipeline: scale → RF
-    pipeline = Pipeline([
-        ("scaler", StandardScaler()),
-        ("rf", RandomForestClassifier(
-            n_estimators=200,
-            max_depth=5,
-            random_state=random_state,
-            class_weight="balanced"
-        ))
-    ])
-
-    # Cross-validation — requires at least 2 samples per class
     n_cls_min = min(len(control_cols), len(treated_cols))
     if n_cls_min >= 2:
         cv = StratifiedKFold(
@@ -77,23 +176,24 @@ def run_ml_classification(
     else:
         cv_scores = np.array([float("nan")])
 
-    # Fit on all data for feature importance + ROC
     pipeline.fit(X, y)
+    selector = pipeline.named_steps["selector"]
     rf_model = pipeline.named_steps["rf"]
+    selected_genes = gene_names_arr[selector.selected_indices_]
 
     importances = rf_model.feature_importances_
     feature_importance_df = pd.DataFrame({
-        "Gene": sig_genes,
-        "Importance": importances
+        "Gene": selected_genes,
+        "Importance": importances,
     }).sort_values("Importance", ascending=False).reset_index(drop=True)
 
-    # ROC curve (on training data — for illustration with small n)
-    X_scaled = pipeline.named_steps["scaler"].transform(X)
+    X_selected = selector.transform(X)
+    X_scaled = pipeline.named_steps["scaler"].transform(X_selected)
     probs = rf_model.predict_proba(X_scaled)[:, 1]
     fpr, tpr, _ = roc_curve(y, probs)
     roc_auc = auc(fpr, tpr)
 
-    roc_fig = _plot_roc(fpr, tpr, roc_auc, cv_scores.mean())
+    roc_fig = _plot_roc(fpr, tpr, roc_auc, float(np.nanmean(cv_scores)))
     importance_fig = _plot_feature_importance(feature_importance_df.head(20))
 
     return {
@@ -104,7 +204,7 @@ def run_ml_classification(
         "feature_importances": feature_importance_df,
         "roc_fig": roc_fig,
         "importance_fig": importance_fig,
-        "n_features": len(sig_genes),
+        "n_features": len(selected_genes),
     }
 
 
@@ -114,7 +214,7 @@ def _plot_roc(fpr, tpr, roc_auc: float, cv_auc: float) -> go.Figure:
     fig.add_trace(go.Scatter(
         x=fpr, y=tpr,
         mode="lines",
-        name=f"ROC (AUC = {roc_auc:.3f})",
+        name=f"Full-data fit (AUC = {roc_auc:.3f})",
         line=dict(color=COLORS["accent"], width=2.5),
         fill="tozeroy",
         fillcolor="rgba(124,106,247,0.15)",
@@ -131,7 +231,7 @@ def _plot_roc(fpr, tpr, roc_auc: float, cv_auc: float) -> go.Figure:
         paper_bgcolor=COLORS["background"],
         font=dict(family="Courier New, monospace", color=COLORS["text"]),
         title=dict(
-            text=f"ROC Curve  |  CV AUC: {cv_auc:.3f}",
+            text=f"ROC (full-data fit)  |  5-fold CV AUC: {cv_auc:.3f}",
             font=dict(size=15), x=0.5
         ),
         xaxis=dict(title="False Positive Rate", gridcolor="rgba(255,255,255,0.05)"),
@@ -159,7 +259,11 @@ def _plot_feature_importance(df: pd.DataFrame) -> go.Figure:
         plot_bgcolor=COLORS["surface"],
         paper_bgcolor=COLORS["background"],
         font=dict(family="Courier New, monospace", color=COLORS["text"]),
-        title=dict(text="Feature Importance — Top Classifier Genes", font=dict(size=15), x=0.5),
+        title=dict(
+            text="Feature Importance — Full-Data Model (exploratory)",
+            font=dict(size=15),
+            x=0.5,
+        ),
         xaxis=dict(title="Mean Decrease in Impurity", gridcolor="rgba(255,255,255,0.05)"),
         yaxis=dict(autorange="reversed"),
         height=480,
